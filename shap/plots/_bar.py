@@ -4,7 +4,9 @@ from typing import TYPE_CHECKING
 import matplotlib.pyplot as pl
 import numpy as np
 import pandas as pd
+import plotly
 import scipy
+import plotly.graph_objects as go
 
 from .. import Cohorts, Explanation
 from ..utils import format_value, ordinal_str
@@ -75,7 +77,6 @@ def bar(
     See `bar plot examples <https://shap.readthedocs.io/en/latest/example_notebooks/api_examples/plots/bar.html>`_.
 
     """
-    style = get_style()
     # convert Explanation objects to dictionaries
     if isinstance(shap_values, Explanation):
         cohorts = {"": shap_values}
@@ -240,6 +241,42 @@ def bar(
     if num_features < len(values[0]):
         yticklabels[-1] = "Sum of %d other features" % num_cut
 
+    return _bar_plotly(
+        values=values,
+        feature_inds=feature_inds,
+        feature_order=feature_order,
+        clustering_cutoff=clustering_cutoff,
+        max_display=max_display,
+        y_pos=y_pos,
+        cohort_sizes=cohort_sizes,
+        cohort_labels=cohort_labels,
+        xlabel=xlabel,
+        yticklabels=yticklabels,
+        partition_tree=partition_tree,
+        show=show,
+    )
+
+
+def _bar_matplotlib(
+    *,
+    max_display,
+    clustering_cutoff,
+    num_features,
+    feature_order,
+    features,
+    values,
+    feature_inds,
+    y_pos,
+    cohort_labels,
+    cohort_sizes,
+    xlabel,
+    yticklabels,
+    partition_tree,
+    ax,
+    show,
+):
+    style = get_style()
+
     if ax is None:
         ax = pl.gca()
         # Only modify the figure size if ax was not passed in
@@ -392,6 +429,119 @@ def bar(
         pl.show()
     else:
         return ax
+
+
+def _bar_plotly(
+    *,
+    values,
+    feature_inds,
+    feature_order,
+    clustering_cutoff,
+    max_display,
+    y_pos,
+    cohort_labels,
+    cohort_sizes,
+    xlabel,
+    yticklabels,
+    partition_tree,
+    show,
+):
+    style = get_style()
+
+    # Create figure
+    fig = go.Figure()
+
+    # Calculate bar positions and widths
+    total_width = 0.7
+    bar_width = total_width / len(values)
+
+    red_rgb = f"rgb{plotly.colors.convert_to_RGB_255(style.primary_color_negative)}"
+    blue_rgb = f"rgb{plotly.colors.convert_to_RGB_255(style.primary_color_negative)}"
+
+    # Add bars for each cohort
+    for i in range(len(values)):
+        ypos_offset = -((i - len(values) / 2) * bar_width + bar_width / 2)
+        # Create bar colors based on values
+        bar_colors = [red_rgb if val >= 0 else blue_rgb for val in values[i, feature_inds]]
+        # Add bars
+        fig.add_trace(
+            go.Bar(
+                x=values[i, feature_inds],
+                y=y_pos + ypos_offset,
+                orientation="h",
+                width=bar_width,
+                marker=dict(color=bar_colors),
+                name=f"{cohort_labels[i]} [{cohort_sizes[i] if i < len(cohort_sizes) else None}]",
+                showlegend=True if i == 0 else False,
+            )
+        )
+
+        # Add value labels
+        for j in range(len(y_pos)):
+            val = values[i, feature_inds[j]]
+            text_color = blue_rgb if val < 0 else red_rgb
+            text_pos = "right" if val < 0 else "left"
+
+            fig.add_annotation(
+                x=val,
+                y=y_pos[j] + ypos_offset,
+                text=format_value(val, "%+0.02f"),
+                showarrow=False,
+                font=dict(size=12, color=text_color),
+                xanchor=text_pos,
+                yanchor="middle",
+            )
+
+    # Add vertical line at x=0 if negative values present
+    if np.any(values < 0):
+        fig.add_vline(x=0, line_width=1, line_color="black")
+
+    # Update layout
+    fig.update_layout(
+        title="SHAP Values",
+        barmode="overlay",
+        showlegend=len(values) > 1,
+        xaxis=dict(title=xlabel, titlefont=dict(size=13), zeroline=False, tickfont=dict(size=11)),
+        yaxis=dict(
+            ticktext=yticklabels + [t.split("=")[-1] for t in yticklabels],
+            tickvals=list(y_pos) + list(y_pos),
+            tickfont=dict(size=13),
+            zeroline=False,
+            showgrid=False,
+        ),
+        margin=dict(l=100, r=50, t=30, b=50),
+        plot_bgcolor="white",
+    )
+
+    # Add dendrogram if partition_tree is provided
+    if partition_tree is not None:
+        feature_pos = np.argsort(feature_order)
+        ylines, xlines = dendrogram_coords(feature_pos, partition_tree)
+
+        xlines_min, xlines_max = np.min(xlines), np.max(xlines)
+
+        for xline, yline in zip(xlines, ylines):
+            xv = np.array(xline) / (xlines_max - xlines_min)
+
+            if np.array(xline).max() <= clustering_cutoff and yline.max() < max_display:
+                fig.add_scatter(
+                    x=xv, y=max_display - np.array(yline), mode="lines", line=dict(color="#999999"), showlegend=False
+                )
+
+        # Add clustering cutoff line
+        fig.add_vline(
+            x=clustering_cutoff,
+            line_dash="dash",
+            line_color="#dddddd",
+            annotation_text=f"Clustering cutoff = {format_value(clustering_cutoff, '%0.02f')}",
+            annotation_textangle=-90,
+            annotation_position="top right",
+        )
+
+    if show:
+        fig.show()
+    else:
+        return fig
 
 
 def bar_legacy(shap_values, features=None, feature_names=None, max_display=None, show=True):

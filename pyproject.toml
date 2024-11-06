@@ -44,7 +44,7 @@ classifiers = [
 dynamic = ["version"]
 
 [project.optional-dependencies]
-plots = ["matplotlib", "ipython"]
+plots = ["matplotlib", "plotly", "ipython"]
 others = ["lime"]
 docs = [
   "matplotlib",
