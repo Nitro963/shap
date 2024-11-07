@@ -1,5 +1,5 @@
 import warnings
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 import matplotlib.pyplot as pl
 import numpy as np
@@ -29,6 +29,7 @@ def bar(
     clustering_cutoff=0.5,
     show_data="auto",
     ax=None,
+    engine: Literal["plotly", "matplotlib"] = "plotly",
     show=True,
 ):
     """Create a bar plot of a set of SHAP values.
@@ -240,19 +241,36 @@ def bar(
             yticklabels.append(feature_names[i])
     if num_features < len(values[0]):
         yticklabels[-1] = "Sum of %d other features" % num_cut
-
-    return _bar_plotly(
+    if engine == "plotly":
+        return _bar_plotly(
+            values=values,
+            feature_inds=feature_inds,
+            feature_order=feature_order,
+            clustering_cutoff=clustering_cutoff,
+            max_display=max_display,
+            y_pos=y_pos,
+            cohort_sizes=cohort_sizes,
+            cohort_labels=cohort_labels,
+            xlabel=xlabel,
+            yticklabels=yticklabels,
+            partition_tree=partition_tree,
+            show=show,
+        )
+    return _bar_matplotlib(
+        max_display=max_display,
+        clustering_cutoff=clustering_cutoff,
+        num_features=num_features,
+        feature_order=feature_order,
+        features=features,
         values=values,
         feature_inds=feature_inds,
-        feature_order=feature_order,
-        clustering_cutoff=clustering_cutoff,
-        max_display=max_display,
         y_pos=y_pos,
-        cohort_sizes=cohort_sizes,
         cohort_labels=cohort_labels,
+        cohort_sizes=cohort_sizes,
         xlabel=xlabel,
         yticklabels=yticklabels,
         partition_tree=partition_tree,
+        ax=ax,
         show=show,
     )
 
@@ -455,7 +473,7 @@ def _bar_plotly(
     total_width = 0.7
     bar_width = total_width / len(values)
 
-    red_rgb = f"rgb{plotly.colors.convert_to_RGB_255(style.primary_color_negative)}"
+    red_rgb = f"rgb{plotly.colors.convert_to_RGB_255(style.primary_color_positive)}"
     blue_rgb = f"rgb{plotly.colors.convert_to_RGB_255(style.primary_color_negative)}"
 
     # Add bars for each cohort
